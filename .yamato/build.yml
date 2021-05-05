@@ -9,6 +9,6 @@ commands:
   - perl build.pl
 
 artifacts:
-  build:
+  artifacts:
     paths:
       - build/builds.zip
