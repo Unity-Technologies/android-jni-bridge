@@ -80,6 +80,7 @@ class JniBridge
         "::android::os::PowerManager",
         "::android::os::Process",
         "::android::os::Vibrator",
+        "::android::provider::Settings_Global",
         "::android::provider::Settings_Secure",
         "::android::provider::Settings_System",
         "::android::telephony::TelephonyManager",
