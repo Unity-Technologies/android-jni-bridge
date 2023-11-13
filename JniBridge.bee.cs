@@ -38,6 +38,7 @@ using System.Linq;
 class JniBridge
 {
     const string kAndroidApi = "android-31";
+    const string kJavaVersion = "17";
 
     static class Platform
     {
@@ -187,9 +188,9 @@ class JniBridge
         if (jdk != null)
             return jdk;
         var openJdk = StevedoreArtifact.UnityInternal(HostPlatform.Pick(
-            linux:   "open-jdk-linux-x64/jdk11.0.14.1-1_c17a2ae6fe1b4281fb613fed32027cf93e0251795387941bd8c1fcb6c74f9db4.zip",
-            mac:     "open-jdk-mac-x64/jdk11.0.14.1-1_236fc2e31a8b6da32fbcf8624815f509c51605580cb2c6285e55510362f272f8.zip",
-            windows: "open-jdk-win-x64/jdk11.0.14.1-1_85218201fea144521d643808d167605d6d46cd4fe44ee4001991a3a4b76fdd64.zip"
+            linux:   "open-jdk-linux-x64/jdk17.0.9-9_8d1cbcce56285f3146cf7761353a643fe573b39e45bd94f35590dca39277f667.zip",
+            mac:     "open-jdk-mac-x64/jdk17.0.9-9_388f7edd2524a9235650fa7cf531302e4676b80526b2d6a0fa199d030779169d.zip",
+            windows: "open-jdk-windows-x64/jdk17.0.9-9_f12c2989c2f749b13282640a12d7d624097f6c2d45144d87331f21ad352ab63e.zip"
         ));
         return new Jdk(openJdk.Path.ResolveWithFileSystem());
     }
@@ -205,9 +206,9 @@ class JniBridge
                 return sdkNpath;
         }
         var sdkArtifact = StevedoreArtifact.UnityInternal(HostPlatform.Pick(
-            linux:   "android-sdk-linux-x86_64/32.0.0_786892eaffb9da632d76518abd381ad6e647d0c442e5df8a5ee83d780f1c9bba.7z",
-            mac:     "android-sdk-darwin-x86_64/32.0.0_01b3084deb3c473718ec212d6f34f44d64888e23f60c2b27194a84741dd128a3.7z",
-            windows: "android-sdk-windows-x86_64/32.0.0_5f6c83d41ac3d697823858e27db1774b1ecfe226b6e9a12e944caed0f76f824b.7z"
+            linux:   "android-sdk-linux-x86_64/34.0.0_0a97a033af4e683716921230975eeec605001b4782c3c813c4bd1cd45478d701.7z",
+            mac:     "android-sdk-darwin-x86_64/34.0.0_243d245a26b16b02ad9e589bfd78a993ef992c23732c3b03c9120abde6bfb045.7z",
+            windows: "android-sdk-windows-x86_64/34.0.0_7b70575084ce12881d8d8c84e005136ab4a841003c59dff4d0a66e95d5be2781.7z"
         ));
         return sdkArtifact.Path.ResolveWithFileSystem();
     }
@@ -249,7 +250,7 @@ class JniBridge
         var apiGeneratorFiles = jarDir.Files("*.java", true);
         var classFileDir = new NPath($"artifacts/{jarname}");
         var apiGeneratorJar = new NPath($"build/{jarname}.jar");
-        var classFiles = jdk.SetupCompilation(classFileDir, apiGeneratorFiles, new NPath[] { jarDir }, new NPath[0], targetVersion: "11");
+        var classFiles = jdk.SetupCompilation(classFileDir, apiGeneratorFiles, new NPath[] { jarDir }, new NPath[0], targetVersion: kJavaVersion);
         jdk.SetupJar(new NPath[] { classFileDir }, classFiles, apiGeneratorJar);
         Backend.Current.AddAliasDependency(jarname, apiGeneratorJar);
         return apiGeneratorJar;
