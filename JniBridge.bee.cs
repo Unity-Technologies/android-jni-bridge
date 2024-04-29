@@ -37,7 +37,7 @@ using System.Linq;
 
 class JniBridge
 {
-    const string kAndroidApi = "android-31";
+    const string kAndroidApi = "android-34";
     const string kJavaVersion = "17";
 
     static class Platform
