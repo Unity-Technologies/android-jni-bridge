@@ -91,6 +91,7 @@ class JniBridge
         "::android::view::Display",
         "::android::view::Gravity",
         "::android::view::SurfaceView",
+        "::android::view::WindowInsets_Type",
         "::android::view::WindowManager",
         "::android::webkit::MimeTypeMap",
         "::android::widget::CheckBox",
