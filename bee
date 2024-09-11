@@ -5,9 +5,15 @@
 #driver executable.
 set -euo pipefail
 
+#require unzip
+if ! command -v unzip >/dev/null 2>&1; then
+  echo "Bee: unzip utility required but not found; for Ubuntu/WSL try 'sudo apt-get install unzip'"
+  exit 1
+fi
+
 #these two values will be replaced by the buildprocess when this script is used in a bootstrap distribution. When not replaced
 #this script assumes it lives next to the standalone driver
-use_bee_from_steve="bee/4614ca8dfa47_e30d39dc9e8f44f17d5d0e36aed8224ec76a26ca0702ca4a2bc2679504ef7520.zip"
+use_bee_from_steve="bee/d49ba172e644_b1dd9c2a353f512f6fb387377df96863454744d11299e01ce87ab9671307291f.zip"
 use_bee_from_steve_repo="https://public-stevedore.unity3d.com/r/public"
 
 if [[ "$use_bee_from_steve_repo" =~ .*testing.* ]]; then
@@ -19,14 +25,32 @@ if [[ "$OSTYPE" == "msys" ]]; then
   exit 1
 fi
 
-#stevedore artifacts for the dotnet runtimes. these are produced by the yamato CI for our "netcorerun" repo. The zip file contains
+#stevedore artifacts for the dotnet runtimes & SDKs. these are produced by the yamato CI for our "netcorerun" repo. The zip file contains
 #an info file that describes from which git commit / yamato-id it was built.  They are plain upstream packages, just unzipped & rezipped
 #with this extra information added.
-dotnet_runtime_linux="dotnet-runtime-linux-x64/a057d2d_456b6c52196a7058883b449c3c14035e93ad94047a136c89610fb53734095602.zip" #net-runtime 6.0.8
-dotnet_runtime_osx_x64="dotnet-runtime-osx-x64/a057d2d_112720e179fb36f93fdfd8fb77cbab0c24c6a6b61881e44d3c06e97904f69b73.zip" #net-runtime 6.0.8
-dotnet_runtime_osx_arm64="dotnet-runtime-osx-arm64/a057d2d_e4594857f1f7201a5038d6e278698a6f207d53428d4efe57365640b03e32b92d.zip" #net-runtime 6.0.8
+dotnet_runtime_linux="dotnet-runtime-linux-x64/6.0.16-e82d673_34984da5aab222c276035b6115aa4d34a6b728db6558e8805f3dd7b675e3a7f7.zip"
+dotnet_runtime_osx_x64="dotnet-runtime-osx-x64/6.0.16-e82d673_90e3566ed522b0beec72cb4faeca4a2c24b60792b9a3ba03774d91b482d8e64c.zip"
+dotnet_runtime_osx_arm64="dotnet-runtime-osx-arm64/6.0.16-e82d673_f0c52904b50050a8a35a34f8e97041ccd44ded995c0b72c33e111c17c9c1d319.zip"
+dotnet_sdk_linux="dotnet-sdk-linux-x64/6.0.413-f6bf86e_1194ec9a4fa846edfcd28e8dfa1a830c45eb2190134c7dfbc18fdf7160b586d2.7z"
+dotnet_sdk_osx_x64="dotnet-sdk-osx-x64/6.0.413-f6bf86e_f3446c2c693eced9049efeeaaef6d4c643b963b34d81916f5aa87434c1203786.7z"
+dotnet_sdk_osx_arm64="dotnet-sdk-osx-arm64/6.0.413-f6bf86e_528d903337452fc3dc42a7e6c63eb173d70026edbc20d180c85522cecc2bd602.7z"
+
 
 steve_artifact_return_value=""
+
+uname=$(uname)
+case ${uname} in
+    Darwin)
+        hashCmd="shasum -a 256"
+    ;;
+    Linux)
+        hashCmd=sha256sum
+    ;;
+    *)
+        echo "Error: unknown system: \"${uname}\"";
+        exit 1
+    ;;
+esac
 
 download_or_return_steve_artifact()
 {
@@ -52,8 +76,36 @@ download_or_return_steve_artifact()
         mkdir -p "$temporary_dir"
         downloaded_file="$temporary_dir/download.zip"
 
-        #--fail means that if the http result is not OK, curl will actually fail. if not it will write a beautiful 404 page into $downloaded_file and exit with code 0
-        curl --fail  --location "$download_link" --output "$downloaded_file"
+        dl_filename=$(basename "$download_link")
+        exp_sha256=$(echo "$dl_filename" | sed -e "s/.*_//" -e "s/\..*//")
+
+        dl_success=0
+        for sleepy_time in 0 5 5 5 5
+        do
+            sleep $sleepy_time
+
+            # --fail means that if the http result is not OK, curl will actually fail.
+            # If not it will write a beautiful 404 page into $downloaded_file and exit
+            # with code 0.
+            if curl --fail --location "$download_link" --output "$downloaded_file"
+            then
+                actual_sha256=$($hashCmd "$downloaded_file" | cut -d' ' -f1)
+                if [ "$actual_sha256" = "$exp_sha256" ]
+                then
+                    dl_success=1
+                    break
+                fi
+
+                echo "$downloaded_file sha256 mismatch (expected: $exp_sha256 actual: $actual_sha256), removing"
+                rm -f "$downloaded_file"
+            fi
+        done
+
+        if [ "$dl_success" != 1 ]
+        then
+            echo "Error: bee bootstrap download failed" 1>&2
+            exit 1
+        fi
 
         #after downloading into the temporary directory, we unzip it into the same temporary directory
         unzip -q -d "$temporary_dir" "$downloaded_file"
@@ -74,17 +126,21 @@ download_or_return_steve_artifact()
 }
 
 dotnet_runtime_steve=""
+dotnet_sdk_steve=""
 determine_dotnet_runtime_steve() {
    type="$(uname)-$(uname -m)"
    case "$type" in
        Darwin-x86_64)
            dotnet_runtime_steve="$dotnet_runtime_osx_x64"
+           dotnet_sdk_steve="$dotnet_sdk_osx_x64"
            ;;
        Darwin-arm64)
            dotnet_runtime_steve="$dotnet_runtime_osx_arm64"
+           dotnet_sdk_steve="$dotnet_sdk_osx_arm64"
            ;;
        Linux-x86_64)
            dotnet_runtime_steve="$dotnet_runtime_linux"
+           dotnet_sdk_steve="$dotnet_sdk_linux"
            ;;
        *)
            echo "Unsupported system: $type"
@@ -119,16 +175,31 @@ dotnet_exe="$steve_artifact_return_value/dotnet"
 #it uses this to run the stevedore downloader program on net5.
 export BEE_DOTNET_MUXER="$dotnet_exe"
 export BEE_DISTRIBUTION_PATH="$distribution_path"
+export DOTNET_MULTILEVEL_LOOKUP=0
 
-"$dotnet_exe" "$standalone_path" "$@"
+if [ "${1:-default}" == "dotnet" ]; then
+    # Use bee steve to download and unpack the dotnet SDK
+    dotnet_sdk_unzip_dir_path="$HOME/.beebootstrap/$dotnet_sdk_steve"
+    "$dotnet_exe" "$standalone_path" "steve" "internal-unpack" "public" "$dotnet_sdk_steve" "$dotnet_sdk_unzip_dir_path"
+
+    #invoke dotnet
+    shift 1; 
+    dotnet_sdk_exe="$dotnet_sdk_unzip_dir_path/dotnet"
+    $dotnet_sdk_exe "$@"
+
+else
+
+    #invoke bee
+    "$dotnet_exe" "$standalone_path" "$@"
+fi
 # ReleaseNotes: 
 
 
-# Automatically generated by Yamato Job: https://unity-ci.cds.internal.unity3d.com/job/20992285
+# Automatically generated by Yamato Job: https://unity-ci.cds.internal.unity3d.com/job/41242856
 
 # ### Bee 2021 release notes
 # 
-# ## Changes Requiring Changes To BuildCode
+# ## Breaking Changes
 # * The type used for GUIDs in all CSharpProgram and ProjectFile members that handle them (`CSharpProgram.ExpilcitGuid`, `CSharpProgramReference` constructor, `IProjectFile.Guid`) was changed from string to System.GUID, to avoid bugs where you accidentally put curly braces in the GUID when you shouldn't, or the other way around.
 # * Completely new Pram binding ([cross platform application deployment tooling](https://github.cds.internal.unity3d.com/unity/pram/#platform--runtime-application-manager-pram)) which is compatible with latest Pram version. The binding is located at `Bee.PramBinding.PramExecutable` and allows to set up application deploy and run actions. Note that Pram no longer handles application bundling and expects platform specific application formats.
 # * StandaloneBeeDriver.BuildProgramProjectFile has been replaced by BuildProgramProjectFileFor(BuildProgramContext bpc). You can create a buildprogram context by having the very first thing you do in your buildprogram be: var context = new BuildProgramContext()
@@ -266,7 +337,7 @@ export BEE_DISTRIBUTION_PATH="$distribution_path"
 
 # ### Bee 2022 release notes
 # 
-# ## Changes Requiring Changes To BuildCode
+# ## Breaking Changes
 # 
 # * AppPackage.NativeLibraries condition input for `CollectionWithConditions` is no longer `(AppPackageConfiguration, Architecture)>` but `AppPackageConfigurationWithSpecificArchitecture` instead
 # * Xcode toolchain classes for `Lipo` and `Dsymutil` now operate on `BuiltNativeProgram` instances, rather than `NPath` instances.
@@ -298,6 +369,8 @@ export BEE_DISTRIBUTION_PATH="$distribution_path"
 # * CSharpProgram2.SetupPublish() now takes a SetupPublishArgs so that future additional arguments will not become API breaks. New argument is TargetFramework for specifying a framework when publishing a library
 # * You can now set the `BEE_TEST_TEMP_DIR` environment variable to override the directory used as a root when running tests
 # * Added `Backend.RegisterAllOutputFilesInDirectoryToKeepPristine` to mark all output files in a directory as pristine.
+# * Visual Studio Stevedore Packages, versions 2017 (15.9.51), 2019 (16.11.21) and 2022 are now always resolving the right matching versions of the C++ toolchain and redistributables.
+# * Visual Studio 2022 is now available.
 # 
 # ## Bug Fixes
 # 
@@ -338,4 +411,17 @@ export BEE_DISTRIBUTION_PATH="$distribution_path"
 # * On windows, if you start a bee build in a directory where another bee build is running, the 2nd build will now fail instead of waiting for the first one to finish
 # * Fixed a crash printing status messages if the annotation contains a printf format specifiers.
 
-#MANIFEST public: bee/4614ca8dfa47_e30d39dc9e8f44f17d5d0e36aed8224ec76a26ca0702ca4a2bc2679504ef7520.zip
+
+# ### Bee 2023 release notes
+# 
+# ## Breaking Changes
+# 
+# ## Improvements
+# 
+# ## Bug Fixes
+# 
+# ## Other changes
+# * The full-rebuild feature (bee -l, jam -a) has been disabled, and these flags
+#   are now no-ops.
+
+#MANIFEST public: bee/d49ba172e644_b1dd9c2a353f512f6fb387377df96863454744d11299e01ce87ab9671307291f.zip
