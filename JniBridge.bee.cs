@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using Bee.BuildTools;
 using Bee.Core;
 using Bee.Core.Stevedore;
@@ -201,24 +203,57 @@ class JniBridge
         return new Jdk(openJdk.Path.ResolveWithFileSystem());
     }
 
-    private static bool IsValidJdkVersion(string javaHomePath, out string version)
+    private static bool IsValidJdkVersion(string jdkPath, out Version version)
     {
-        var versionFilePath = Path.Combine(javaHomePath, "version.txt");
-        if (File.Exists(versionFilePath))
+        var javaExecutable = HostPlatform.IsWindows ? "java.exe" : "java";
+        var javaPath = Path.Combine(jdkPath, "bin", javaExecutable);
+        if (File.Exists(javaPath))
         {
-            version = File.ReadAllText(versionFilePath).Trim();
-            var firstDotIndex = version.IndexOf('.');
-            var majorVersion = firstDotIndex != -1 ? version.Substring(0, firstDotIndex) : version;
-            if (majorVersion == kJavaVersion) return true;
-            else Console.WriteLine($"Found Java version {majorVersion}, but required version is {kJavaVersion}. JDK from Stevedore will be used.");
-        }
-        else
-        {
-            Console.WriteLine($"{versionFilePath} file not found.");
-        }
+            ProcessStartInfo psi = new ProcessStartInfo
+            {
+                FileName = javaPath,
+                Arguments = "-version",
+                RedirectStandardError = true,
+                UseShellExecute = false,
+                CreateNoWindow = true
+            };
 
+            using (Process process = Process.Start(psi))
+            {
+                string output = "";
+                process.ErrorDataReceived += (sender, eventArgs) =>
+                {
+                    if (!string.IsNullOrEmpty(eventArgs.Data))
+                        output += eventArgs.Data + Environment.NewLine;
+                };
+                process.BeginErrorReadLine();
+                process.WaitForExit();
+
+                version = ParseJavaVersion(output);
+                if (version != null && version.Major.ToString() == kJavaVersion)
+                    return true;
+                Console.WriteLine($"Java version {version} found, but expected {kJavaVersion}. JDK from Stevedore will be used.");
+            }
+        }
         version = null;
         return false;
+    }
+
+    private static Version ParseJavaVersion(string output)
+    {
+        var regex = new Regex(@"version[^\d]*(\d+(\.\d+)+)", RegexOptions.IgnoreCase);
+
+        var match = regex.Match(output);
+        if (match.Success)
+        {
+            string versionString = match.Groups[1].Value;
+            if (Version.TryParse(versionString, out Version parsedVersion))
+                return parsedVersion;
+            else Console.WriteLine($"Failed to parse Java version string: {versionString}");
+        }
+
+        Console.WriteLine("No valid Java version found.");
+        return null;
     }
 
     static NPath SetupAndroidSdk()
