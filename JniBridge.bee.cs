@@ -1,17 +1,18 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.Text;
 using Bee.BuildTools;
 using Bee.Core;
 using Bee.Core.Stevedore;
 using Bee.NativeProgramSupport;
+using Bee.ProjectGeneration.VisualStudio;
 using Bee.Toolchain.Android;
 using Bee.Toolchain.GNU;
 using Bee.Tools;
-using NiceIO;
-using Bee.ProjectGeneration.VisualStudio;
 using Bee.VisualStudioSolution;
-using System.Linq;
+using NiceIO;
 
 /**
  * Required environment variables:
@@ -186,14 +187,38 @@ class JniBridge
     static Jdk SetupJava()
     {
         var jdk = Jdk.UserDefault;
-        if (jdk != null)
+        if (jdk != null && IsValidJdkVersion(jdk.JavaHome.ToString(), out var version))
+        {
+            Console.WriteLine($"Using Java version {version} from {jdk.JavaHome}");
             return jdk;
+        }
+
         var openJdk = StevedoreArtifact.UnityInternal(HostPlatform.Pick(
             linux:   "open-jdk-linux-x64/jdk17.0.9-9_8d1cbcce56285f3146cf7761353a643fe573b39e45bd94f35590dca39277f667.zip",
             mac:     "open-jdk-mac-x64/jdk17.0.9-9_388f7edd2524a9235650fa7cf531302e4676b80526b2d6a0fa199d030779169d.zip",
             windows: "open-jdk-windows-x64/jdk17.0.9-9_f12c2989c2f749b13282640a12d7d624097f6c2d45144d87331f21ad352ab63e.zip"
         ));
         return new Jdk(openJdk.Path.ResolveWithFileSystem());
+    }
+
+    private static bool IsValidJdkVersion(string javaHomePath, out string version)
+    {
+        var versionFilePath = Path.Combine(javaHomePath, "version.txt");
+        if (File.Exists(versionFilePath))
+        {
+            version = File.ReadAllText(versionFilePath).Trim();
+            var firstDotIndex = version.IndexOf('.');
+            var majorVersion = firstDotIndex != -1 ? version.Substring(0, firstDotIndex) : version;
+            if (majorVersion == kJavaVersion) return true;
+            else Console.WriteLine($"Found Java version {majorVersion}, but required version is {kJavaVersion}. JDK from Stevedore will be used.");
+        }
+        else
+        {
+            Console.WriteLine($"{versionFilePath} file not found.");
+        }
+
+        version = null;
+        return false;
     }
 
     static NPath SetupAndroidSdk()
